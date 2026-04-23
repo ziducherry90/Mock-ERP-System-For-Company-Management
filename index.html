@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Enterprise ERP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        slate: {
+                            50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1', 400: '#94a3b8',
+                            500: '#64748b', 600: '#475569', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for an enterprise feel */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Background animations for auth screen */
+        @keyframes blob {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden">
+
+    <!-- Root Container -->
+    <div id="app-root" class="h-screen w-full flex"></div>
+
+    <!-- Modal Container -->
+    <div id="modal-root"></div>
+
+<script>
+/**
+ * ==========================================
+ * MOCK DATABASE & CONFIGURATION
+ * ==========================================
+ */
+const INITIAL_USERS = [
+    { id: 1, username: 'admin', password: 'password', role: 'admin', name: 'System Admin' },
+    { id: 2, username: 'editor', password: 'password', role: 'editor', name: 'Content Editor' },
+    { id: 3, username: 'mod', password: 'password', role: 'moderator', name: 'Community Mod' }
+];
+
+const INITIAL_DB = {
+    inventory: [
+        { id: 1, name: 'Enterprise Server Blade', sku: 'SRV-001', quantity: 15, threshold: 20, price: 2500, category: 'Hardware', supplier: 'TechCorp Inc.' },
+        { id: 2, name: 'Ergonomic Office Chair', sku: 'FURN-102', quantity: 42, threshold: 10, price: 350, category: 'Furniture', supplier: 'OfficePlus' },
+        { id: 3, name: '27" 4K Monitor', sku: 'DISP-4K', quantity: 5, threshold: 15, price: 400, category: 'Electronics', supplier: 'TechCorp Inc.' },
+        { id: 4, name: 'Cloud Storage 1TB (Annual)', sku: 'SW-CLD-1T', quantity: 999, threshold: 50, price: 120, category: 'Software', supplier: 'CloudNet' },
+    ],
+    customers: [
+        { id: 1, name: 'Acme Corporation', email: 'contact@acme.corp', phone: '+1 (555) 0192', company: 'Acme Corp', address: '123 Acme Way, New York, NY', status: 'Active', totalSpent: 45000 },
+        { id: 2, name: 'Globex Industries', email: 'info@globex.com', phone: '+1 (555) 0987', company: 'Globex', address: '404 Industrial Pkwy, Chicago, IL', status: 'Inactive', totalSpent: 12500 },
+        { id: 3, name: 'Soylent Corp', email: 'sales@soylent.co', phone: '+1 (555) 1122', company: 'Soylent Corp', address: '99 Green St, San Francisco, CA', status: 'Active', totalSpent: 89000 },
+    ],
+    transactions: [
+        { id: 1, date: '2026-04-15', type: 'revenue', amount: 15000, description: 'Server bulk order (Acme)', category: 'Hardware Sales', method: 'Bank Transfer' },
+        { id: 2, date: '2026-04-18', type: 'loss', amount: 2500, description: 'Office supplies & maintenance', category: 'Operational Exp', method: 'bKash' },
+        { id: 3, date: '2026-04-20', type: 'revenue', amount: 4500, description: 'Monitor sales', category: 'Electronics Sales', method: 'Nagad' },
+        { id: 4, date: '2026-04-21', type: 'loss', amount: 8000, description: 'Payroll and employee benefits', category: 'Payroll', method: 'Bank Transfer' },
+    ],
+    profile: {
+        name: 'Nexus Enterprises Ltd.', email: 'contact@nexus-erp.com.bd', phone: '+880 1711-000000',
+        address: 'Level 4, Tech Tower, Banani, Dhaka-1213, Bangladesh', website: 'www.nexus-erp.com.bd', taxId: 'BIN-000123456789', established: '2020'
+    }
+};
+
+const PERMISSIONS = {
+    admin: { inventory: ['add', 'edit', 'delete'], customers: ['add', 'edit', 'delete'], accounts: ['add', 'delete'], profile: ['edit'] },
+    editor: { inventory: ['add', 'edit'], customers: ['add', 'edit'], accounts: ['add'], profile: [] },
+    moderator: { inventory: [], customers: ['add'], accounts: [], profile: [] }
+};
+
+/**
+ * ==========================================
+ * APPLICATION CORE (STATE & LOGIC)
+ * ==========================================
+ */
+const app = {
+    state: {
+        user: null,
+        currentTab: 'dashboard',
+        isMobileMenuOpen: false,
+        db: JSON.parse(JSON.stringify(INITIAL_DB)), // Deep copy
+        loginError: '',
+        authMode: 'login' // 'login' or 'register'
+    },
+
+    init() {
+        this.render();
+    },
+
+    hasPermission(resource, action) {
+        if (!this.state.user) return false;
+        return PERMISSIONS[this.state.user.role]?.[resource]?.includes(action) || false;
+    },
+
+    getFinancials() {
+        let revenue = 0, loss = 0;
+        this.state.db.transactions.forEach(t => {
+            if (t.type === 'revenue') revenue += Number(t.amount);
+            if (t.type === 'loss') loss += Number(t.amount);
+        });
+        return { revenue, loss, net: revenue - loss };
+    },
+
+    toggleAuthMode() {
+        this.state.authMode = this.state.authMode === 'login' ? 'register' : 'login';
+        this.state.loginError = '';
+        this.render();
+    },
+
+    register(e) {
+        e.preventDefault();
+        const n = document.getElementById('reg_name').value;
+        const u = document.getElementById('reg_username').value;
+        const p = document.getElementById('reg_password').value;
+        const r = document.getElementById('reg_role').value;
+
+        // Validation to prevent duplicate usernames
+        if (INITIAL_USERS.some(user => user.username === u)) {
+            this.state.loginError = 'User ID already exists.';
+            this.render();
+            return;
+        }
+
+        const newUser = { id: Date.now(), username: u, password: p, role: r, name: n };
+        INITIAL_USERS.push(newUser);
+        
+        // Auto-login upon successful registration
+        this.state.user = newUser;
+        this.state.loginError = '';
+        this.render();
+    },
+
+    login(e) {
+        e.preventDefault();
+        const u = document.getElementById('username').value;
+        const p = document.getElementById('password').value;
+        const user = INITIAL_USERS.find(user => user.username === u && user.password === p);
+        if (user) {
+            this.state.user = user;
+            this.state.loginError = '';
+        } else {
+            this.state.loginError = 'Authentication failed. Please verify your credentials.';
+        }
+        this.render();
+    },
+
+    logout() {
+        this.state.user = null;
+        this.state.currentTab = 'dashboard';
+        this.render();
+    },
+
+    setTab(tab) {
+        this.state.currentTab = tab;
+        this.state.isMobileMenuOpen = false;
+        this.render();
+    },
+
+    toggleMobileMenu() {
+        this.state.isMobileMenuOpen = !this.state.isMobileMenuOpen;
+        this.render();
+    },
+
+    formatCurrency(amount) {
+        return '৳' + Number(amount).toLocaleString();
+    },
+
+    /**
+     * ==========================================
+     * RENDERING ENGINE
+     * ==========================================
+     */
+    render() {
+        const root = document.getElementById('app-root');
+        
+        if (!this.state.user) {
+            root.innerHTML = this.views.login();
+        } else {
+            root.innerHTML = this.views.layout();
+            document.getElementById('main-content').innerHTML = this.views[this.state.currentTab]();
+        }
+        lucide.createIcons();
+    },
+
+    views: {
+        // --- LOGIN VIEW ---
+        login() {
+            const isLogin = app.state.authMode === 'login';
+
+            const formHtml = isLogin ? `
+                <div>
+                    <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Welcome back</h2>
+                    <p class="text-slate-500 text-sm font-medium">Enter your details to access your account.</p>
+                </div>
+                
+                ${app.state.loginError ? `
+                <div class="bg-red-50 border border-red-200 text-red-700 p-4 text-sm flex items-center gap-3 rounded-xl mt-6 font-medium">
+                    <i data-lucide="alert-circle" class="w-5 h-5 shrink-0"></i> <p>${app.state.loginError}</p>
+                </div>` : ''}
+                
+                <form onsubmit="app.login(event)" class="space-y-5 mt-8">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">User ID</label>
+                        <input type="text" id="username" required class="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm" placeholder="e.g. admin" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+                        <input type="password" id="password" required class="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm" placeholder="••••••••" />
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition duration-200 text-sm mt-4 shadow-lg shadow-blue-600/30">
+                        Sign In to Workspace
+                    </button>
+                </form>
+                
+                <p class="mt-8 text-center text-sm font-medium text-slate-600">
+                    Don't have an account? <button onclick="app.toggleAuthMode()" class="text-blue-600 font-bold hover:text-blue-700 transition">Create an account</button>
+                </p>
+
+                <div class="mt-8 pt-8 border-t border-slate-100">
+                    <p class="font-bold mb-4 text-slate-400 text-[10px] uppercase tracking-wider flex items-center justify-center gap-2">
+                        <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i> Test Credentials
+                    </p>
+                    <div class="grid grid-cols-1 gap-2 text-sm text-slate-600">
+                        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100"><span class="font-mono font-semibold text-xs text-slate-800">admin / password</span> <span class="text-[10px] font-bold uppercase text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Full Access</span></div>
+                        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100"><span class="font-mono font-semibold text-xs text-slate-800">editor / password</span> <span class="text-[10px] font-bold uppercase text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Editor</span></div>
+                        <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100"><span class="font-mono font-semibold text-xs text-slate-800">mod / password</span> <span class="text-[10px] font-bold uppercase text-amber-600 bg-amber-50 px-2 py-1 rounded-md">Read-Only</span></div>
+                    </div>
+                </div>
+            ` : `
+                <div>
+                    <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Create Account</h2>
+                    <p class="text-slate-500 text-sm font-medium">Join the Nexus ERP workspace.</p>
+                </div>
+                
+                ${app.state.loginError ? `
+                <div class="bg-red-50 border border-red-200 text-red-700 p-4 text-sm flex items-center gap-3 rounded-xl mt-6 font-medium">
+                    <i data-lucide="alert-circle" class="w-5 h-5 shrink-0"></i> <p>${app.state.loginError}</p>
+                </div>` : ''}
+                
+                <form onsubmit="app.register(event)" class="space-y-4 mt-8">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">Full Name</label>
+                        <input type="text" id="reg_name" required class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm" placeholder="e.g. Jane Doe" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">User ID</label>
+                        <input type="text" id="reg_username" required class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm" placeholder="e.g. janedoe" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">Password</label>
+                        <input type="password" id="reg_password" required class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm" placeholder="••••••••" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">Select Role</label>
+                        <select id="reg_role" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition text-sm font-medium text-slate-700">
+                            <option value="admin">Administrator (Full Access)</option>
+                            <option value="editor">Editor (Manage Data)</option>
+                            <option value="moderator">Moderator (View Only)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition duration-200 text-sm mt-4 shadow-lg shadow-slate-900/20">
+                        Register Account
+                    </button>
+                </form>
+                
+                <p class="mt-8 text-center text-sm font-medium text-slate-600">
+                    Already have an account? <button onclick="app.toggleAuthMode()" class="text-blue-600 font-bold hover:text-blue-700 transition">Sign in</button>
+                </p>
+            `;
+
+            return `
+            <div class="min-h-screen flex items-center justify-center bg-slate-50 font-sans w-full p-4 fade-in relative overflow-hidden">
+                <!-- Decorative animated background -->
+                <div class="absolute top-[-10%] left-[-10%] w-[30rem] h-[30rem] bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
+                <div class="absolute top-[20%] right-[-10%] w-[30rem] h-[30rem] bg-indigo-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+                <div class="absolute bottom-[-20%] left-[20%] w-[30rem] h-[30rem] bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
+
+                <!-- Central Card -->
+                <div class="w-full max-w-5xl bg-white rounded-[2rem] shadow-2xl overflow-hidden flex z-10 border border-white/60 backdrop-blur-sm">
+                    
+                    <!-- Branding Panel (Left) -->
+                    <div class="hidden lg:flex w-1/2 bg-slate-950 p-16 flex-col justify-between relative overflow-hidden">
+                        <div class="absolute top-0 right-0 -mr-24 -mt-24 w-96 h-96 rounded-full bg-blue-600/20 blur-3xl"></div>
+                        <div class="absolute bottom-0 left-0 -ml-24 -mb-24 w-96 h-96 rounded-full bg-emerald-600/20 blur-3xl"></div>
+                        
+                        <div class="relative z-10">
+                            <div class="flex items-center gap-3 mb-16">
+                                <div class="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-900/50"><i data-lucide="layout-dashboard" class="w-7 h-7 text-white"></i></div>
+                                <span class="text-3xl font-extrabold tracking-tight text-white">Nexus ERP</span>
+                            </div>
+                            <div class="max-w-md mt-10">
+                                <h1 class="text-[2.75rem] font-black mb-6 leading-[1.1] tracking-tight text-white">Manage your<br/>enterprise<br/>with confidence.</h1>
+                                <p class="text-slate-400 text-lg leading-relaxed mb-10 font-medium">A powerful, unified workspace for inventory, financials, and customer relations.</p>
+                                
+                                <div class="space-y-6">
+                                    <div class="flex items-center gap-4 text-sm text-slate-300">
+                                        <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><i data-lucide="trending-up" class="w-5 h-5 text-emerald-400"></i></div>
+                                        <span class="font-medium text-base">Real-time financial analytics</span>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-sm text-slate-300">
+                                        <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><i data-lucide="package" class="w-5 h-5 text-blue-400"></i></div>
+                                        <span class="font-medium text-base">Smart inventory tracking</span>
+                                    </div>
+                                    <div class="flex items-center gap-4 text-sm text-slate-300">
+                                        <div class="bg-slate-800 p-2.5 rounded-xl border border-slate-700"><i data-lucide="shield-check" class="w-5 h-5 text-indigo-400"></i></div>
+                                        <span class="font-medium text-base">Role-based access control</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="relative z-10 flex items-center justify-between text-xs font-semibold tracking-wide text-slate-600 mt-12">
+                            <p>&copy; ${new Date().getFullYear()} Nexus Enterprises Ltd.</p>
+                        </div>
+                    </div>
+
+                    <!-- Form Panel (Right) -->
+                    <div class="w-full lg:w-1/2 p-8 sm:p-12 lg:p-16 flex flex-col justify-center bg-white relative">
+                        <div class="flex lg:hidden items-center gap-3 mb-10">
+                            <div class="bg-blue-600 p-2 rounded-xl shadow-md"><i data-lucide="layout-dashboard" class="w-6 h-6 text-white"></i></div>
+                            <span class="text-2xl font-bold tracking-tight text-slate-900">Nexus ERP</span>
+                        </div>
+
+                        <div class="w-full max-w-sm mx-auto lg:max-w-none">
+                            ${formHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        // --- MAIN LAYOUT ---
+        layout() {
+            const tabs = [
+                { id: 'dashboard', icon: 'layout-dashboard', label: 'Overview' },
+                { id: 'inventory', icon: 'package', label: 'Inventory' },
+                { id: 'customers', icon: 'users', label: 'Customers' },
+                { id: 'accounts', icon: 'wallet', label: 'Ledger' },
+                { id: 'profile', icon: 'building', label: 'Profile' }
+            ];
+
+            const navLinks = tabs.map(tab => `
+                <button onclick="app.setTab('${tab.id}')" class="w-full flex items-center gap-3.5 px-6 py-3.5 transition-all duration-200 text-sm font-semibold ${app.state.currentTab === tab.id ? 'bg-indigo-500/10 text-indigo-400 border-l-[3px] border-indigo-500' : 'hover:bg-white/5 text-slate-400 hover:text-white border-l-[3px] border-transparent'}">
+                    <i data-lucide="${tab.icon}" class="w-[18px] h-[18px] ${app.state.currentTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}"></i> ${tab.label}
+                </button>
+            `).join('');
+
+            const titleMap = { dashboard: 'System Overview', inventory: 'Inventory Management', customers: 'Customer Database', accounts: 'Financial Ledger', profile: 'Company Profile' };
+
+            return `
+            ${app.state.isMobileMenuOpen ? `<div class="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-sm transition-opacity" onclick="app.toggleMobileMenu()"></div>` : ''}
+            
+            <aside class="${app.state.isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static inset-y-0 left-0 w-[260px] bg-[#0b1120] text-slate-300 flex flex-col z-50 border-r border-slate-800/50 transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none">
+                <div class="px-6 py-6 flex items-center justify-between border-b border-white/5">
+                    <div class="flex items-center gap-3.5">
+                        <div class="bg-gradient-to-br from-indigo-500 to-blue-600 p-2 rounded-lg shadow-lg shadow-indigo-500/20"><i data-lucide="hexagon" class="w-5 h-5 text-white fill-white/20"></i></div>
+                        <span class="text-lg font-bold text-white tracking-tight">Nexus ERP</span>
+                    </div>
+                    <button class="md:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-md transition-colors" onclick="app.toggleMobileMenu()"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <nav class="flex-1 py-6 space-y-1 overflow-y-auto">
+                    <div class="px-6 text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-4">Workspace</div>
+                    ${navLinks}
+                </nav>
+                <div class="p-5 border-t border-white/5 bg-white/[0.02]">
+                    <div class="flex items-center gap-3.5 mb-5 px-1">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center text-white font-bold border border-white/10 text-sm shadow-inner shrink-0">
+                            ${app.state.user.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold text-white leading-tight truncate">${app.state.user.name}</p>
+                            <p class="text-[11px] font-medium text-slate-400 capitalize mt-0.5 truncate">${app.state.user.role}</p>
+                        </div>
+                    </div>
+                    <button onclick="app.logout()" class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg transition duration-200 text-xs font-semibold border border-white/5">
+                        <i data-lucide="log-out" class="w-4 h-4"></i> Secure Sign Out
+                    </button>
+                </div>
+            </aside>
+
+            <main class="flex-1 flex flex-col h-screen overflow-hidden w-full bg-[#f8fafc]">
+                <header class="bg-white/80 backdrop-blur-md border-b border-slate-200/70 px-4 md:px-8 py-4 flex items-center justify-between z-10 shrink-0 sticky top-0">
+                    <div class="flex items-center text-sm">
+                        <button onclick="app.toggleMobileMenu()" class="md:hidden mr-4 p-2 rounded-lg bg-white border border-slate-200 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors"><i data-lucide="menu" class="w-5 h-5"></i></button>
+                        <h1 class="text-xl font-bold text-slate-900 tracking-tight">${titleMap[app.state.currentTab]}</h1>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100 shadow-sm">
+                            <div class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                            <span class="uppercase tracking-wider">${app.state.user.role}</span>
+                        </div>
+                    </div>
+                </header>
+                <div class="flex-1 overflow-y-auto p-4 md:p-8">
+                    <div class="max-w-[1400px] mx-auto fade-in" id="main-content"></div>
+                </div>
+            </main>`;
+        },
+
+        // --- DASHBOARD TAB ---
+        dashboard() {
+            const fin = app.getFinancials();
+            const totalStock = app.state.db.inventory.reduce((acc, item) => acc + Number(item.quantity), 0);
+            const invValue = app.state.db.inventory.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.price)), 0);
+            const lowStock = app.state.db.inventory.filter(i => Number(i.quantity) <= Number(i.threshold)).slice(0,4);
+            
+            const exp = app.state.db.transactions.filter(t => t.type === 'loss');
+            const expByCat = exp.reduce((acc, t) => { acc[t.category || 'Other'] = (acc[t.category || 'Other'] || 0) + Number(t.amount); return acc; }, {});
+            const topExp = Object.entries(expByCat).sort((a,b) => b[1] - a[1]).slice(0,4).map(e => ({ cat: e[0], amt: e[1], pct: fin.loss ? (e[1]/fin.loss)*100 : 0 }));
+            const topCust = [...app.state.db.customers].sort((a, b) => Number(b.totalSpent) - Number(a.totalSpent)).slice(0, 4);
+
+            const txRows = app.state.db.transactions.slice(-5).reverse().map(t => `
+                <div class="flex items-center justify-between p-4 hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-0 group">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center ${t.type === 'revenue' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-600'}">
+                            <i data-lucide="${t.type === 'revenue' ? 'arrow-up-right' : 'arrow-down-right'}" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">${t.description}</p>
+                            <p class="text-[11px] font-medium text-slate-500 mt-0.5 uppercase tracking-wider">${t.date} &bull; ${t.category}</p>
+                        </div>
+                    </div>
+                    <span class="font-bold text-sm ${t.type === 'revenue' ? 'text-emerald-600' : 'text-slate-900'}">${t.type === 'revenue' ? '+' : '-'} ${app.formatCurrency(t.amount)}</span>
+                </div>
+            `).join('');
+
+            const expRows = topExp.map(e => `
+                <div class="group">
+                    <div class="flex justify-between text-sm mb-2"><span class="font-semibold text-slate-700 group-hover:text-indigo-600 transition-colors">${e.cat}</span><span class="text-slate-900 font-bold">${app.formatCurrency(e.amt)} <span class="text-slate-400 font-medium ml-1 text-xs">(${e.pct.toFixed(1)}%)</span></span></div>
+                    <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden"><div class="bg-indigo-500 h-full rounded-full transition-all duration-1000 ease-out" style="width: ${e.pct}%"></div></div>
+                </div>
+            `).join('') || '<p class="text-sm font-medium text-slate-500">No expenses recorded.</p>';
+
+            const alertRows = lowStock.map(i => `
+                <div class="flex justify-between items-center p-3.5 border border-slate-100 bg-white hover:border-slate-200 shadow-sm hover:shadow-md rounded-xl mb-3 transition-all">
+                    <div>
+                        <p class="text-sm font-bold text-slate-900">${i.name}</p>
+                        <p class="text-[11px] font-medium text-slate-500 mt-0.5 uppercase tracking-wider">Threshold: ${i.threshold}</p>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-md text-xs font-bold ${i.quantity == 0 ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}">${i.quantity} Left</span>
+                </div>
+            `).join('') || `<div class="text-center py-8 border border-slate-100 rounded-xl bg-slate-50/50"><div class="bg-emerald-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"><i data-lucide="check" class="w-6 h-6 text-emerald-600"></i></div><p class="text-sm font-bold text-slate-700">Stock Optimal</p></div>`;
+
+            const custRows = topCust.map(c => `
+                <div class="p-4 flex items-center justify-between border-b border-slate-100 last:border-0 hover:bg-slate-50/80 transition-colors">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-200 to-slate-100 flex items-center justify-center text-slate-700 font-bold text-xs uppercase shadow-sm border border-slate-200/60 shrink-0">${c.name.charAt(0)}</div>
+                        <div class="min-w-0"><p class="text-sm font-bold text-slate-900 truncate">${c.name}</p><p class="text-[11px] font-medium text-slate-500 mt-0.5 truncate">${c.company}</p></div>
+                    </div>
+                    <p class="text-sm font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md ml-2 shrink-0">${app.formatCurrency(c.totalSpent)}</p>
+                </div>
+            `).join('') || '<p class="p-4 text-sm font-medium text-slate-500 text-center">No clients found.</p>';
+
+            return `
+            <div class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div class="p-6 rounded-2xl border border-slate-200/70 bg-white shadow-sm flex flex-col justify-between h-full relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>
+                        <div><p class="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Net Balance</p><h4 class="text-3xl font-black text-slate-900 tracking-tight">${app.formatCurrency(fin.net)}</h4></div>
+                    </div>
+                    <div class="p-6 rounded-2xl border border-slate-200/70 bg-white shadow-sm flex flex-col justify-between h-full relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-emerald-500"></div>
+                        <div><p class="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Total Revenue</p><h4 class="text-3xl font-black text-emerald-600 tracking-tight">${app.formatCurrency(fin.revenue)}</h4></div>
+                    </div>
+                    <div class="p-6 rounded-2xl border border-slate-200/70 bg-white shadow-sm flex flex-col justify-between h-full relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-slate-800"></div>
+                        <div><p class="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Total Expenses</p><h4 class="text-3xl font-black text-slate-900 tracking-tight">${app.formatCurrency(fin.loss)}</h4></div>
+                    </div>
+                    <div class="p-6 rounded-2xl border border-slate-200/70 bg-white shadow-sm flex flex-col justify-between h-full relative overflow-hidden group hover:shadow-md transition-shadow">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-blue-400"></div>
+                        <div><p class="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Inventory Value</p><h4 class="text-3xl font-black text-slate-900 tracking-tight">${app.formatCurrency(invValue)}</h4></div>
+                        <div class="mt-4 text-[11px] font-bold text-slate-500 bg-slate-50 px-2.5 py-1 w-max rounded-md border border-slate-100 uppercase tracking-wide">${totalStock} units active</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+                            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50"><h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Recent Activity</h3></div>
+                            <div class="flex flex-col">${txRows}</div>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
+                            <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider mb-6">Expense Distribution</h3>
+                            <div class="space-y-6">${expRows}</div>
+                        </div>
+                    </div>
+                    <div class="space-y-6">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 p-6">
+                            <div class="flex items-center justify-between mb-5">
+                                <h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Stock Alerts</h3>
+                                <div class="bg-amber-100 text-amber-700 p-1.5 rounded-lg"><i data-lucide="alert-triangle" class="w-4 h-4"></i></div>
+                            </div>
+                            ${alertRows}
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+                            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50"><h3 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Top Clients (LTV)</h3></div>
+                            <div class="flex flex-col">${custRows}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        // --- INVENTORY TAB ---
+        inventory() {
+            const canAdd = app.hasPermission('inventory', 'add');
+            const canEdit = app.hasPermission('inventory', 'edit');
+            const canDelete = app.hasPermission('inventory', 'delete');
+
+            const rows = app.state.db.inventory.map(i => {
+                let statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-100'; let statusText = 'In Stock';
+                if (i.quantity == 0) { statusClass = 'bg-red-50 text-red-700 border-red-100'; statusText = 'Out of Stock'; }
+                else if (i.quantity <= i.threshold) { statusClass = 'bg-amber-50 text-amber-700 border-amber-100'; statusText = 'Low Stock'; }
+
+                return `
+                <tr class="hover:bg-slate-50/60 transition-colors border-b border-slate-100 last:border-0 item-row group" data-search="${i.name.toLowerCase()} ${i.sku.toLowerCase()}">
+                    <td class="px-6 py-4"><p class="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">${i.name}</p><p class="font-mono text-xs font-semibold text-slate-400 mt-1">${i.sku}</p></td>
+                    <td class="px-6 py-4"><p class="text-sm font-semibold text-slate-700">${i.category}</p><p class="text-xs font-medium text-slate-500 mt-1">${i.supplier}</p></td>
+                    <td class="px-6 py-4"><div class="flex flex-col items-start gap-1.5"><span class="px-2.5 py-1 rounded-md text-[11px] font-bold border ${statusClass}">${statusText}</span><span class="text-slate-500 font-semibold text-xs ml-0.5">${i.quantity} / Min: ${i.threshold}</span></div></td>
+                    <td class="px-6 py-4 text-slate-900 font-bold">${app.formatCurrency(i.price)}</td>
+                    <td class="px-6 py-4 text-right space-x-2">
+                        ${canEdit ? `<button onclick="app.modals.openInventory(${i.id})" class="text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-semibold text-xs transition">Edit</button>` : ''}
+                        ${canDelete ? `<button onclick="app.actions.deleteInventory(${i.id})" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg font-semibold text-xs transition">Delete</button>` : ''}
+                    </td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="5" class="p-12 text-center text-slate-500 font-medium text-sm">No records found matching your criteria.</td></tr>`;
+
+            return `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden flex flex-col h-full fade-in">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
+                    <div class="relative w-full sm:w-96">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 transform -translate-y-1/2"></i>
+                        <input type="text" placeholder="Filter by name or SKU..." onkeyup="app.utils.filterTable(this.value)" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-sm font-medium" />
+                    </div>
+                    ${canAdd ? `<button onclick="app.modals.openInventory()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold transition text-sm shadow-md shadow-indigo-500/20 whitespace-nowrap"><i data-lucide="plus" class="w-4 h-4"></i> Add Item</button>` : ''}
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-50/80 border-b border-slate-200/70">
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Product Details</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Category & Vendor</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Stock Level</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Unit Price</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px] text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        },
+
+        // --- CUSTOMERS TAB ---
+        customers() {
+            const canAdd = app.hasPermission('customers', 'add');
+            const canEdit = app.hasPermission('customers', 'edit');
+            const canDelete = app.hasPermission('customers', 'delete');
+
+            const rows = app.state.db.customers.map(c => `
+                <tr class="hover:bg-slate-50/60 transition-colors border-b border-slate-100 last:border-0 item-row group" data-search="${c.name.toLowerCase()} ${c.company.toLowerCase()}">
+                    <td class="px-6 py-4 flex items-center gap-4"><div class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-100 to-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-inner shrink-0">${c.name.charAt(0)}</div><div><p class="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">${c.name}</p><p class="text-slate-500 font-medium text-[11px] uppercase tracking-wider mt-1">${c.company}</p></div></td>
+                    <td class="px-6 py-4 text-slate-600 text-sm font-medium space-y-1"><p class="flex items-center gap-2"><i data-lucide="mail" class="w-3.5 h-3.5 text-slate-400"></i>${c.email}</p><p class="flex items-center gap-2"><i data-lucide="phone" class="w-3.5 h-3.5 text-slate-400"></i>${c.phone}</p></td>
+                    <td class="px-6 py-4"><span class="px-2.5 py-1 inline-block rounded-md text-[11px] font-bold mb-1.5 border ${c.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-100 text-slate-600 border-slate-200'}">${c.status}</span><p class="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">LTV: <span class="text-slate-900">${app.formatCurrency(c.totalSpent)}</span></p></td>
+                    <td class="px-6 py-4 text-right space-x-2">
+                        ${canEdit ? `<button onclick="app.modals.openCustomer(${c.id})" class="text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-semibold text-xs transition">Edit</button>` : ''}
+                        ${canDelete ? `<button onclick="app.actions.deleteCustomer(${c.id})" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg font-semibold text-xs transition">Delete</button>` : ''}
+                    </td>
+                </tr>
+            `).join('') || `<tr><td colspan="4" class="p-12 text-center text-slate-500 font-medium text-sm">No clients found matching your search.</td></tr>`;
+
+            return `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden flex flex-col h-full fade-in">
+                <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
+                    <div class="relative w-full sm:w-96">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 transform -translate-y-1/2"></i>
+                        <input type="text" placeholder="Search clients or companies..." onkeyup="app.utils.filterTable(this.value)" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-sm font-medium" />
+                    </div>
+                    ${canAdd ? `<button onclick="app.modals.openCustomer()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold transition text-sm shadow-md shadow-indigo-500/20 whitespace-nowrap"><i data-lucide="plus" class="w-4 h-4"></i> Add Client</button>` : ''}
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-50/80 border-b border-slate-200/70">
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Client Details</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Contact Info</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Status & Value</th>
+                                <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px] text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        },
+
+        // --- ACCOUNTS TAB ---
+        accounts() {
+            const canAdd = app.hasPermission('accounts', 'add');
+            const canDelete = app.hasPermission('accounts', 'delete');
+            const sortedTx = [...app.state.db.transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            const rows = sortedTx.map(t => `
+                <tr class="hover:bg-slate-50/60 transition-colors border-b border-slate-100 last:border-0 item-row group" data-search="${t.description.toLowerCase()} ${t.category.toLowerCase()}">
+                    <td class="px-6 py-4 whitespace-nowrap text-slate-500 font-mono font-semibold text-xs">${t.date}</td>
+                    <td class="px-6 py-4 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">${t.description}</td>
+                    <td class="px-6 py-4"><p class="text-sm font-semibold text-slate-700">${t.category || 'Uncategorized'}</p><p class="text-[11px] font-medium text-slate-500 uppercase tracking-wider mt-1 flex items-center gap-1.5"><i data-lucide="credit-card" class="w-3 h-3"></i> ${t.method}</p></td>
+                    <td class="px-6 py-4 font-black text-right text-base ${t.type === 'revenue' ? 'text-emerald-600' : 'text-slate-900'}">${t.type === 'revenue' ? '+' : '-'} ${app.formatCurrency(t.amount)}</td>
+                    ${canDelete ? `<td class="px-6 py-4 text-right"><button onclick="app.actions.deleteTransaction(${t.id})" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg font-semibold text-xs transition">Void</button></td>` : ''}
+                </tr>
+            `).join('') || `<tr><td colspan="${canDelete ? 5 : 4}" class="p-12 text-center text-slate-500 font-medium text-sm">No ledger entries found.</td></tr>`;
+
+            const fin = app.getFinancials();
+
+            return `
+            <div class="space-y-6 fade-in">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div class="bg-white border border-slate-200/70 p-6 rounded-2xl shadow-sm relative overflow-hidden"><div class="absolute top-0 right-0 p-4 opacity-10"><i data-lucide="trending-up" class="w-16 h-16 text-emerald-500"></i></div><p class="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-2">Total Inflows</p><p class="text-3xl font-black text-emerald-600 tracking-tight">${app.formatCurrency(fin.revenue)}</p></div>
+                    <div class="bg-white border border-slate-200/70 p-6 rounded-2xl shadow-sm relative overflow-hidden"><div class="absolute top-0 right-0 p-4 opacity-10"><i data-lucide="trending-down" class="w-16 h-16 text-slate-900"></i></div><p class="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-2">Total Outflows</p><p class="text-3xl font-black text-slate-900 tracking-tight">${app.formatCurrency(fin.loss)}</p></div>
+                    <div class="bg-[#0b1120] border border-slate-800 p-6 rounded-2xl shadow-lg relative overflow-hidden"><div class="absolute top-0 right-0 p-4 opacity-10"><i data-lucide="wallet" class="w-16 h-16 text-white"></i></div><p class="text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-2">Net Balance</p><p class="text-3xl font-black text-white tracking-tight">${app.formatCurrency(fin.net)}</p></div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden flex flex-col">
+                    <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
+                        <div class="relative w-full sm:w-96">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 transform -translate-y-1/2"></i>
+                            <input type="text" placeholder="Search ledger descriptions..." onkeyup="app.utils.filterTable(this.value)" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-sm font-medium" />
+                        </div>
+                        ${canAdd ? `<button onclick="app.modals.openTransaction()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold transition text-sm shadow-md shadow-indigo-500/20 whitespace-nowrap"><i data-lucide="plus" class="w-4 h-4"></i> Log Entry</button>` : ''}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr class="bg-slate-50/80 border-b border-slate-200/70">
+                                    <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Date</th>
+                                    <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Description</th>
+                                    <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px]">Category & Method</th>
+                                    <th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px] text-right">Amount</th>
+                                    ${canDelete ? `<th class="px-6 py-4 font-bold text-slate-500 uppercase tracking-widest text-[11px] text-right">Action</th>` : ''}
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        // --- PROFILE TAB ---
+        profile() {
+            const canEdit = app.hasPermission('profile', 'edit');
+            const data = app.state.db.profile;
+            return `
+            <div class="max-w-4xl mx-auto fade-in">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+                    <div class="px-6 sm:px-8 py-5 border-b border-slate-100 bg-white flex justify-between items-center">
+                        <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wider">Company Profile</h2>
+                        ${canEdit ? `<button onclick="app.modals.openProfile()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition text-xs shadow-sm"><i data-lucide="edit-3" class="w-4 h-4"></i> Edit Profile</button>` : ''}
+                    </div>
+                    <div class="p-6 sm:p-10 space-y-10">
+                        <div class="flex items-center gap-6">
+                            <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-black text-4xl shadow-lg shadow-indigo-500/20 shrink-0">
+                                ${data.name.charAt(0)}
+                            </div>
+                            <div>
+                                <h1 class="text-3xl font-black text-slate-900 tracking-tight">${data.name}</h1>
+                                <p class="text-sm font-medium text-slate-500 mt-2 flex items-center gap-2"><i data-lucide="calendar" class="w-4 h-4"></i> Established: ${data.established}</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-y-8 gap-x-12 text-sm">
+                            <div class="flex items-start gap-4">
+                                <div class="bg-indigo-50 p-2.5 rounded-lg text-indigo-600"><i data-lucide="mail" class="w-5 h-5"></i></div>
+                                <div><p class="text-slate-400 font-bold mb-1 text-[11px] uppercase tracking-widest">Email Address</p><p class="font-bold text-slate-900 text-base">${data.email}</p></div>
+                            </div>
+                            <div class="flex items-start gap-4">
+                                <div class="bg-indigo-50 p-2.5 rounded-lg text-indigo-600"><i data-lucide="phone" class="w-5 h-5"></i></div>
+                                <div><p class="text-slate-400 font-bold mb-1 text-[11px] uppercase tracking-widest">Phone Number</p><p class="font-bold text-slate-900 text-base">${data.phone}</p></div>
+                            </div>
+                            <div class="flex items-start gap-4">
+                                <div class="bg-indigo-50 p-2.5 rounded-lg text-indigo-600"><i data-lucide="globe" class="w-5 h-5"></i></div>
+                                <div><p class="text-slate-400 font-bold mb-1 text-[11px] uppercase tracking-widest">Website</p><p class="font-bold text-slate-900 text-base">${data.website}</p></div>
+                            </div>
+                            <div class="flex items-start gap-4">
+                                <div class="bg-indigo-50 p-2.5 rounded-lg text-indigo-600"><i data-lucide="file-text" class="w-5 h-5"></i></div>
+                                <div><p class="text-slate-400 font-bold mb-1 text-[11px] uppercase tracking-widest">Tax ID / BIN</p><p class="font-mono font-bold text-slate-900 text-base">${data.taxId}</p></div>
+                            </div>
+                            <div class="md:col-span-2 border-t border-slate-100 pt-8 mt-2 flex items-start gap-4">
+                                <div class="bg-indigo-50 p-2.5 rounded-lg text-indigo-600"><i data-lucide="map-pin" class="w-5 h-5"></i></div>
+                                <div><p class="text-slate-400 font-bold mb-1 text-[11px] uppercase tracking-widest">Registered Address</p><p class="font-bold text-slate-900 text-base max-w-lg leading-relaxed">${data.address}</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
+    },
+
+    /**
+     * ==========================================
+     * MODALS & FORMS
+     * ==========================================
+     */
+    modals: {
+        container(title, contentHTML, submitLabel, submitAction) {
+            return `
+            <div class="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[100] p-4 sm:p-6 backdrop-blur-sm fade-in">
+                <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+                    <div class="px-6 py-4 border-b border-slate-200 bg-white shrink-0 flex justify-between items-center">
+                        <h3 class="text-base font-semibold text-slate-900">${title}</h3>
+                        <button type="button" onclick="app.modals.close()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <form onsubmit="${submitAction}(event)" class="flex flex-col overflow-hidden h-full">
+                        <div class="p-6 space-y-4 overflow-y-auto flex-1">${contentHTML}</div>
+                        <div class="px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end gap-3">
+                            <button type="button" onclick="app.modals.close()" class="px-4 py-2 text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-md font-medium transition text-sm shadow-sm">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium transition text-sm shadow-sm">${submitLabel}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>`;
+        },
+
+        close() {
+            document.getElementById('modal-root').innerHTML = '';
+        },
+
+        openInventory(id = null) {
+            const item = id ? app.state.db.inventory.find(i => i.id === id) : { name:'', sku:'', category:'', supplier:'', quantity:'', threshold:'10', price:'' };
+            const content = `
+                <input type="hidden" id="inv_id" value="${id || ''}" />
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Product Name</label><input required id="inv_name" value="${item.name}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">SKU</label><input required id="inv_sku" value="${item.sku}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none font-mono text-sm shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Category</label><input required id="inv_cat" value="${item.category}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Supplier</label><input required id="inv_sup" value="${item.supplier}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Quantity</label><input required type="number" min="0" id="inv_qty" value="${item.quantity}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Min Threshold</label><input required type="number" min="0" id="inv_thr" value="${item.threshold}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Unit Price (৳)</label><input required type="number" min="0" step="0.01" id="inv_pri" value="${item.price}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                </div>`;
+            document.getElementById('modal-root').innerHTML = this.container(id ? 'Edit Item' : 'Add Item', content, 'Save Record', 'app.actions.saveInventory');
+            lucide.createIcons();
+        },
+
+        openCustomer(id = null) {
+            const item = id ? app.state.db.customers.find(i => i.id === id) : { name:'', email:'', phone:'', company:'', address:'', status:'Active', totalSpent:0 };
+            const content = `
+                <input type="hidden" id="cus_id" value="${id || ''}" />
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div><label class="block font-medium text-slate-700 mb-1">Full Name</label><input required id="cus_name" value="${item.name}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Company</label><input required id="cus_com" value="${item.company}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Email</label><input required type="email" id="cus_eml" value="${item.email}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Phone</label><input required id="cus_phn" value="${item.phone}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Address</label><input required id="cus_add" value="${item.address}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Status</label><select id="cus_sts" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none bg-white shadow-sm"><option value="Active" ${item.status==='Active'?'selected':''}>Active</option><option value="Inactive" ${item.status==='Inactive'?'selected':''}>Inactive</option></select></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Lifetime Value (৳)</label><input type="number" min="0" id="cus_spn" value="${item.totalSpent}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm bg-slate-50" /></div>
+                </div>`;
+            document.getElementById('modal-root').innerHTML = this.container(id ? 'Edit Client' : 'Add Client', content, 'Save Client', 'app.actions.saveCustomer');
+            lucide.createIcons();
+        },
+
+        openTransaction() {
+            const today = new Date().toISOString().split('T')[0];
+            const content = `
+                <div class="space-y-4 text-sm">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-2">Entry Type</label>
+                        <select id="tx_typ" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none bg-white shadow-sm">
+                            <option value="revenue">Revenue / Inflow</option>
+                            <option value="loss">Expense / Outflow</option>
+                        </select>
+                    </div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Description</label><input required id="tx_dsc" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" placeholder="e.g. Q1 Software License" /></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label class="block font-medium text-slate-700 mb-1">Category</label><input required id="tx_cat" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" placeholder="e.g. Sales, Payroll" /></div>
+                        <div><label class="block font-medium text-slate-700 mb-1">Method</label><select id="tx_mtd" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none bg-white shadow-sm"><option value="bKash">bKash</option><option value="Nagad">Nagad</option><option value="Rocket">Rocket</option><option value="Cash">Cash</option><option value="Bank Transfer">Bank Transfer</option></select></div>
+                        <div><label class="block font-medium text-slate-700 mb-1">Amount (৳)</label><input required type="number" min="0" step="0.01" id="tx_amt" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none font-medium shadow-sm" /></div>
+                        <div><label class="block font-medium text-slate-700 mb-1">Date</label><input required type="date" id="tx_dat" value="${today}" class="w-full p-2.5 border border-slate-300 rounded-md focus:ring-1 focus:ring-slate-900 outline-none shadow-sm" /></div>
+                    </div>
+                </div>`;
+            document.getElementById('modal-root').innerHTML = this.container('Record Transaction', content, 'Save Entry', 'app.actions.saveTransaction');
+            lucide.createIcons();
+        },
+
+        openProfile() {
+            const data = app.state.db.profile;
+            const content = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Company Legal Name</label><input required id="prf_nam" value="${data.name}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Contact Email</label><input required type="email" id="prf_eml" value="${data.email}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Primary Phone</label><input required id="prf_phn" value="${data.phone}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900" /></div>
+                    <div class="md:col-span-2"><label class="block font-medium text-slate-700 mb-1">Address</label><textarea required id="prf_add" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900 h-20 resize-none">${data.address}</textarea></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Website URL</label><input id="prf_web" value="${data.website}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Tax ID / BIN</label><input id="prf_tax" value="${data.taxId}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900 font-mono" /></div>
+                    <div><label class="block font-medium text-slate-700 mb-1">Year Established</label><input id="prf_est" value="${data.established}" class="w-full p-2.5 border border-slate-300 rounded-md shadow-sm outline-none focus:ring-1 focus:ring-slate-900" /></div>
+                </div>`;
+            document.getElementById('modal-root').innerHTML = this.container('Edit Company Profile', content, 'Save Changes', 'app.actions.saveProfile');
+            lucide.createIcons();
+        }
+    },
+
+    /**
+     * ==========================================
+     * DATA ACTIONS (CREATE, UPDATE, DELETE)
+     * ==========================================
+     */
+    actions: {
+        saveInventory(e) {
+            e.preventDefault();
+            const id = document.getElementById('inv_id').value;
+            const newItem = {
+                id: id ? Number(id) : Date.now(),
+                name: document.getElementById('inv_name').value, sku: document.getElementById('inv_sku').value,
+                category: document.getElementById('inv_cat').value, supplier: document.getElementById('inv_sup').value,
+                quantity: document.getElementById('inv_qty').value, threshold: document.getElementById('inv_thr').value,
+                price: document.getElementById('inv_pri').value
+            };
+            if (id) {
+                const idx = app.state.db.inventory.findIndex(i => i.id == id);
+                if (idx > -1) app.state.db.inventory[idx] = newItem;
+            } else {
+                app.state.db.inventory.push(newItem);
+            }
+            app.modals.close();
+            app.render();
+        },
+        deleteInventory(id) {
+            if (confirm('Are you sure you want to delete this record?')) {
+                app.state.db.inventory = app.state.db.inventory.filter(i => i.id !== id);
+                app.render();
+            }
+        },
+        saveCustomer(e) {
+            e.preventDefault();
+            const id = document.getElementById('cus_id').value;
+            const newItem = {
+                id: id ? Number(id) : Date.now(),
+                name: document.getElementById('cus_name').value, company: document.getElementById('cus_com').value,
+                email: document.getElementById('cus_eml').value, phone: document.getElementById('cus_phn').value,
+                address: document.getElementById('cus_add').value, status: document.getElementById('cus_sts').value,
+                totalSpent: document.getElementById('cus_spn').value
+            };
+            if (id) {
+                const idx = app.state.db.customers.findIndex(i => i.id == id);
+                if (idx > -1) app.state.db.customers[idx] = newItem;
+            } else {
+                app.state.db.customers.push(newItem);
+            }
+            app.modals.close();
+            app.render();
+        },
+        deleteCustomer(id) {
+            if (confirm('Confirm client deletion?')) {
+                app.state.db.customers = app.state.db.customers.filter(i => i.id !== id);
+                app.render();
+            }
+        },
+        saveTransaction(e) {
+            e.preventDefault();
+            app.state.db.transactions.push({
+                id: Date.now(),
+                type: document.getElementById('tx_typ').value, description: document.getElementById('tx_dsc').value,
+                category: document.getElementById('tx_cat').value, method: document.getElementById('tx_mtd').value,
+                amount: document.getElementById('tx_amt').value, date: document.getElementById('tx_dat').value
+            });
+            app.modals.close();
+            app.render();
+        },
+        deleteTransaction(id) {
+            if (confirm('Void this transaction?')) {
+                app.state.db.transactions = app.state.db.transactions.filter(i => i.id !== id);
+                app.render();
+            }
+        },
+        saveProfile(e) {
+            e.preventDefault();
+            app.state.db.profile = {
+                name: document.getElementById('prf_nam').value, email: document.getElementById('prf_eml').value,
+                phone: document.getElementById('prf_phn').value, address: document.getElementById('prf_add').value,
+                website: document.getElementById('prf_web').value, taxId: document.getElementById('prf_tax').value,
+                established: document.getElementById('prf_est').value
+            };
+            app.modals.close();
+            app.render();
+        }
+    },
+
+    utils: {
+        filterTable(query) {
+            query = query.toLowerCase();
+            const rows = document.querySelectorAll('.item-row');
+            rows.forEach(row => {
+                const searchData = row.getAttribute('data-search');
+                if (searchData && searchData.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+    }
+};
+
+// Initialize App
+document.addEventListener('DOMContentLoaded', () => {
+    app.init();
+});
+
+</script>
+</body>
+</html>
